@@ -132,3 +132,43 @@ jobs:
             -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Deploy na EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          AWS_REGION: us-east-1
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          envs: AWS_REGION,ECR_REGISTRY,ECR_REPOSITORY,IMAGE_TAG
+          script: |
+            # 5. Autenticar o Docker da instância no ECR
+            aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+            
+            # 6. Realizar o download da imagem correspondente ao commit
+            docker pull $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+            
+            # 7. Substituir o contêiner anterior
+            docker stop devops-python-api || true
+            docker rm devops-python-api || true
+            
+            # 8. Iniciar a aplicação atualizada
+            docker run --detach \
+              --name devops-python-api \
+              --publish 8000:8000 \
+              --restart unless-stopped \
+              $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+              
+            # 9. Verificar se o contêiner está em execução
+            sleep 3
+            if [ "$(docker ps -q -f name=devops-python-api)" ]; then
+              echo "Deploy concluído e contêiner rodando!"
+            else
+              echo "Falha: O contêiner não subiu corretamente."
+              docker logs devops-python-api
+              exit 1
+            fi
