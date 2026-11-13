@@ -27,7 +27,7 @@ tasks: list[Task] = []
 @app.get("/")
 def root() -> dict[str, str]:
     return {
-        "message": "API DevOps em execução",
+        "message": "Lebron James",
         "docs": "/docs",
     }
 
